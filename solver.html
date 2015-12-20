@@ -1,0 +1,194 @@
+
+<script src="../fancy/functional.js"></script>
+<script src="../fancy/underscore.js"></script>
+<script src="../fancy/fancy.js"></script>
+<script>
+    var thePuzzle =
+            "2333 4" +
+            "2556 4" +
+            "11 6 4" +
+            "7789  " +
+            "  89AA" +
+            " BBCC ";
+
+    var somePuzzle = FA(thePuzzle.split("")).chunk(6);
+
+    var cache = {};
+    var iteration = 0;
+    var queue = false;
+    var solutions = FA([]);
+
+    var doSolve = function() {
+        queue = queue || [function() { return solve(somePuzzle, false, true); }];
+        var found = false;
+
+        var i = 0;
+        while (queue.length && i < 20000) {
+            if (!(i++ % 1000))
+                console.log(i + " best in "+ solutions.map(".length").min());
+            found = (queue.shift())();
+            if (found) {
+                solutions.push(found);
+            }
+        }
+        return FA(solutions).sortBy(".length")[0];
+    }
+
+    var solve = function(puzzleState, moveHistory) {
+        var helpful = toString(puzzleState);
+        var moveHistory = moveHistory || [];
+
+        var puzzleSummary = JSON.stringify(puzzleState);
+        if (cache.hasOwnProperty(puzzleSummary)){ //prevent back-tracking / infinite loops
+            /*
+            if ( moveHistory.depth < cache[puzzleSummary].depth ) {//pointer
+                cache[puzzleSummary].history = moveHistory.history;
+                cache[puzzleSummary].state = moveHistory.state;
+            }*/
+            return false;
+        }
+        cache[puzzleSummary] = [moveHistory]; //attempting to solve
+
+        /*
+        iteration++;
+        console.log(iteration);
+        console.log(moveHistory);
+        console.log(helpful);
+        if (iteration == 203)
+            debugger;
+            */
+
+        if (winCondition(puzzleState)) {
+            return moveHistory;
+        }
+        var moves = enumerateValidMoves(puzzleState);
+        var possibleNextStates = moves.map( function(possibleMove) {
+
+            return {state: applyMove(puzzleState, possibleMove), move: possibleMove};
+            }
+        );
+
+        queue = queue.concat(possibleNextStates.map(function(possibility) {
+            return function() {
+                return solve(possibility.state, moveHistory.concat(possibility.state) );
+            }
+        }));
+    }
+
+    var recalculateDepth = function(i){
+        var it, x=0;
+        for (var it=i; it && it.hasOwnProperty('history'); it = it['history'])
+            x++;
+        return x;
+    };
+
+    var winCondition = function(puzzleState) {
+        return isVehicle(getValueOfSpace(puzzleState,5,2)) === 1;
+    };
+
+    var enumerateValidMoves = function (puzzle) {
+        var vehicles = getVehicles(puzzle);
+        var validMoves = vehicles.map(function(vehicle){
+            return [canGoForward(puzzle, vehicle), canGoBackward(puzzle, vehicle)];
+        });
+        return _.filter(_.flatten(validMoves));
+    };
+
+    var canGoForward = function(puzzle, vehicle) {
+        // forward = right or down
+        if (vehicle.orientation === 'ver'){
+          if  (isSpaceOpen(puzzle, vehicle.leftX, vehicle.topY + vehicle.size ))
+            return {direction: 'down', vehicle: vehicle};
+        }
+        else
+            {
+            if (isSpaceOpen(puzzle, vehicle.leftX + vehicle.size , vehicle.topY))
+                return {direction: 'right', vehicle: vehicle};
+            }
+        return false;
+    };
+
+    var canGoBackward = function(puzzle, vehicle) {
+        // backward = left or up
+        if (vehicle.orientation === 'ver') {
+            if (isSpaceOpen(puzzle, vehicle.leftX, vehicle.topY - 1))
+                return {direction: 'up', vehicle: vehicle};
+        }  else {
+            if (isSpaceOpen(puzzle, vehicle.leftX - 1, vehicle.topY)){
+                return {direction: 'left', vehicle: vehicle};
+            }
+        }
+        return false;
+    };
+
+    var applyMove = function(puzzleOriginal, move ) {
+        var newPuzzle = puzzleOriginal.slice().map(".slice()");
+        if (move.direction == 'down' ) {
+            setValueOfSpace(newPuzzle, move.vehicle.leftX, move.vehicle.topY, " ");
+            setValueOfSpace(newPuzzle, move.vehicle.leftX, move.vehicle.topY + move.vehicle.size, move.vehicle.label);
+        }
+        if (move.direction == 'up') {
+            setValueOfSpace(newPuzzle, move.vehicle.leftX, move.vehicle.topY - 1, move.vehicle.label );
+            setValueOfSpace(newPuzzle, move.vehicle.leftX, move.vehicle.topY+ move.vehicle.size -1 , " ");
+        }
+        if (move.direction == 'left') {
+            setValueOfSpace(newPuzzle, move.vehicle.leftX - 1, move.vehicle.topY, move.vehicle.label );
+            setValueOfSpace(newPuzzle, move.vehicle.leftX + move.vehicle.size -1 , move.vehicle.topY , " ");
+        }
+        if (move.direction == 'right') {
+            setValueOfSpace(newPuzzle, move.vehicle.leftX, move.vehicle.topY, " " );
+            setValueOfSpace(newPuzzle, move.vehicle.leftX + move.vehicle.size, move.vehicle.topY , move.vehicle.label);
+        }
+        return newPuzzle;
+    }
+
+    var isSpaceOpen = function(puzzle, x,y){
+        return getValueOfSpace(puzzle, x, y) === ' ';
+    };
+
+    var getValueOfSpace = function(puzzle,x,y) {
+        if (puzzle.hasOwnProperty(y) && puzzle[y].hasOwnProperty(x))
+            return puzzle[y][x];
+        return "X";
+    };
+
+    var setValueOfSpace = function(puzzle,x,y, value){
+        puzzle[y][x] = value;
+    }
+
+    var getVehicles = function(puzzleOriginal) {
+        var puzzle = puzzleOriginal.slice().map(".slice()");
+        var vehicles = [];
+        for (var y=0; y < puzzle.length; y++)
+            for(var x =0; x < puzzle.length; x++)
+                vehicles.push(findVehicleAt(puzzle, x, y));
+        return vehicles.filter(_.identity);
+    };
+
+    var isVehicle = function(char){
+        return "123456789ABCDEFGHIJ".indexOf(char) + 1;
+    };
+
+    var toString = function(puzzle) {
+        return "\n" + puzzle.map(".join('')").join("\n");
+    };
+
+    var findVehicleAt = function(puzzle, x, y) {
+        var value = (getValueOfSpace(puzzle, x, y));
+        if (isVehicle(value)) {
+            for (var i = 1; getValueOfSpace(puzzle,x+i, y) == value; i++) {
+                setValueOfSpace(puzzle,x+i,y,' ');
+            };
+            var rightSize = i;
+            for (var i = 1; getValueOfSpace(puzzle,x, y+i) == value; i++) {
+                setValueOfSpace(puzzle,x,y+i,' ');
+            };
+            var downSize = i;
+            setValueOfSpace(puzzle,x,y,' ');
+
+            return {'orientation': rightSize > downSize ? "hor" : "ver", size: Math.max(rightSize, downSize), id: isVehicle(value), label: value, topY: y, leftX: x};
+        } else {
+            return false;
+        }
+    };
+</script>
